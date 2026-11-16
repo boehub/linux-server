@@ -1,0 +1,32 @@
+# Managed by Ansible. Caddy gets and renews HTTPS certificates by itself for every host
+# named here (ports 80 and 443 must be reachable from the internet). For "localhost"
+# it uses a local test certificate instead.
+{% if stack_acme_email | length > 0 %}
+{
+	email {{ stack_acme_email }}
+}
+{% endif %}
+
+(secure) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+	encode zstd gzip
+}
+{% if stack_demo_app | bool %}
+
+{{ stack_domain }} {
+	import secure
+	reverse_proxy whoami:80
+}
+{% endif %}
+{% for site in stack_sites %}
+
+{{ site.host }} {
+	import secure
+	reverse_proxy {{ site.upstream }}
+}
+{% endfor %}

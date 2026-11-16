@@ -1,0 +1,11 @@
+---
+# Copy to local.yml (it is git-ignored) and fill in. bootstrap.sh can also write this for you.
+admin_user: alex
+admin_ssh_keys:
+  - "ssh-ed25519 AAAAC3Nza... alex@laptop"
+
+server_hostname: homeserver
+server_timezone: America/New_York
+stack_domain: home.example.com
+stack_acme_email: alex@example.com
+fail2ban_ignore_ips: ["127.0.0.1/8", "::1", "192.168.1.0/24"]

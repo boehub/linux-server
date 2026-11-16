@@ -1,0 +1,46 @@
+---
+- name: Install ufw
+  ansible.builtin.apt:
+    name: ufw
+    state: present
+
+- name: Refuse incoming connections by default
+  community.general.ufw:
+    direction: incoming
+    default: deny
+
+- name: Allow outgoing connections by default
+  community.general.ufw:
+    direction: outgoing
+    default: allow
+
+# `limit` allows SSH but blocks an address that opens 6 connections in 30 seconds.
+- name: Allow SSH (rate limited)
+  community.general.ufw:
+    rule: limit
+    port: "{{ ssh_port }}"
+    proto: tcp
+
+- name: Allow web traffic for the Caddy stack
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop:
+    - {port: "80", proto: tcp}
+    - {port: "443", proto: tcp}
+    - {port: "443", proto: udp}
+  when: enable_docker | bool and enable_stack | bool
+
+- name: Allow the extra ports from firewall_extra_rules
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto | default('tcp') }}"
+    from_ip: "{{ item.from | default('any') }}"
+  loop: "{{ firewall_extra_rules }}"
+
+- name: Turn the firewall on
+  community.general.ufw:
+    state: enabled
+    logging: "low"

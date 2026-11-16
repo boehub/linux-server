@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+# Look over the server and say what is wrong. Writes /var/lib/server-health/status.json,
+# logs problems to the journal (journalctl -t server-healthcheck), and exits 1 if any check
+# failed so systemd marks the run as failed. Optionally POSTs problems to NOTIFY_URL.
+#
+# Settings: /etc/server-healthcheck.env. Tests override paths with the HC_* variables.
+set -uo pipefail
+
+CONF=${HC_CONF:-/etc/server-healthcheck.env}
+STATUS_FILE=${HC_STATUS_FILE:-/var/lib/server-health/status.json}
+BACKUP_STATE=${HC_BACKUP_STATE:-/var/lib/server-backup/last-success}
+DISK_PATHS=${HC_DISK_PATHS:-"/ /srv"}
+
+DISK_MAX_PERCENT=85
+MEM_MIN_PERCENT=10
+BACKUP_MAX_AGE_HOURS=36
+CHECK_BACKUPS=0
+CHECK_DOCKER=0
+NOTIFY_URL=
+# shellcheck disable=SC1090
+[ -r "$CONF" ] && . "$CONF"
+
+problems=()
+checks=()   # "name|ok|detail"
+
+record() {  # record NAME OK(1/0) DETAIL
+    checks+=("$1|$2|$3")
+    [ "$2" = 1 ] || problems+=("$1: $3")
+}
+
+check_disk() {
+    local path used
+    for path in $DISK_PATHS; do
+        [ -d "$path" ] || continue
+        used=$(df --output=pcent "$path" | tail -1 | tr -dc '0-9')
+        if [ "$used" -gt "$DISK_MAX_PERCENT" ]; then
+            record "disk $path" 0 "${used}% full (limit ${DISK_MAX_PERCENT}%)"
+        else
+            record "disk $path" 1 "${used}% full"
+        fi
+    done
+}
+
+check_memory() {
+    local total avail pct
+    total=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+    avail=$(awk '/^MemAvailable:/ {print $2}' /proc/meminfo)
+    pct=$(( avail * 100 / total ))
+    if [ "$pct" -lt "$MEM_MIN_PERCENT" ]; then
+        record memory 0 "only ${pct}% available (minimum ${MEM_MIN_PERCENT}%)"
+    else
+        record memory 1 "${pct}% available"
+    fi
+}
+
+check_units() {
+    local failed
+    command -v systemctl >/dev/null 2>&1 || return 0
+    failed=$(systemctl --failed --no-legend --plain 2>/dev/null | awk '{print $1}' | paste -sd' ' -)
+    if [ -n "$failed" ]; then
+        record "systemd units" 0 "failed: $failed"
+    else
+        record "systemd units" 1 "none failed"
+    fi
+}
+
+check_reboot() {
+    if [ -e /var/run/reboot-required ]; then
+        record reboot 0 "a reboot is needed to finish updates"
+    else
+        record reboot 1 "not needed"
+    fi
+}
+
+check_docker() {
+    [ "$CHECK_DOCKER" = 1 ] || return 0
+    local bad
+    if ! docker info >/dev/null 2>&1; then
+        record docker 0 "the Docker daemon is not answering"
+        return
+    fi
+    bad=$(docker ps -a --filter status=exited --filter status=dead --filter health=unhealthy \
+          --format '{{.Names}} ({{.Status}})' | paste -sd, -)
+    if [ -n "$bad" ]; then
+        record containers 0 "$bad"
+    else
+        record containers 1 "all running and healthy"
+    fi
+}
+
+check_backup() {
+    [ "$CHECK_BACKUPS" = 1 ] || return 0
+    local last age_h
+    if [ ! -r "$BACKUP_STATE" ]; then
+        record backup 0 "no successful backup recorded yet"
+        return
+    fi
+    last=$(cat "$BACKUP_STATE")
+    age_h=$(( ( $(date +%s) - last ) / 3600 ))
+    if [ "$age_h" -gt "$BACKUP_MAX_AGE_HOURS" ]; then
+        record backup 0 "last success ${age_h}h ago (limit ${BACKUP_MAX_AGE_HOURS}h)"
+    else
+        record backup 1 "last success ${age_h}h ago"
+    fi
+}
+
+check_time() {
+    command -v timedatectl >/dev/null 2>&1 || return 0
+    local sync
+    sync=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)
+    case "$sync" in
+        yes) record "clock" 1 "synchronized" ;;
+        no)  record "clock" 0 "not synchronized with a time server" ;;
+    esac
+}
+
+check_disk
+check_memory
+check_units
+check_reboot
+check_docker
+check_backup
+check_time
+
+# ---- report -------------------------------------------------------------------------
+json_escape() { jq -Rn --arg s "$1" '$s'; }
+
+mkdir -p "$(dirname "$STATUS_FILE")"
+{
+    printf '{"time": %s, "ok": %s, "checks": [' "$(date +%s)" "$([ ${#problems[@]} -eq 0 ] && echo true || echo false)"
+    first=1
+    for c in "${checks[@]}"; do
+        IFS='|' read -r name ok detail <<< "$c"
+        [ $first = 1 ] || printf ', '
+        first=0
+        printf '{"name": %s, "ok": %s, "detail": %s}' "$(json_escape "$name")" "$([ "$ok" = 1 ] && echo true || echo false)" "$(json_escape "$detail")"
+    done
+    printf ']}\n'
+} > "$STATUS_FILE.tmp" && mv "$STATUS_FILE.tmp" "$STATUS_FILE"
+
+if [ ${#problems[@]} -eq 0 ]; then
+    echo "all ${#checks[@]} checks passed"
+    exit 0
+fi
+
+host=$(hostname)
+for p in "${problems[@]}"; do
+    echo "PROBLEM: $p"
+    logger -t server-healthcheck -p user.warning "$p" 2>/dev/null || true
+done
+if [ -n "$NOTIFY_URL" ]; then
+    printf '%s\n' "${problems[@]}" | curl -fsS --max-time 15 -H "Title: $host needs attention" \
+        --data-binary @- "$NOTIFY_URL" >/dev/null 2>&1 || echo "could not send the notification" >&2
+fi
+exit 1

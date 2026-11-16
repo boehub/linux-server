@@ -1,0 +1,9 @@
+[Unit]
+Description=Run the server health check regularly
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ healthcheck_interval }}
+
+[Install]
+WantedBy=timers.target

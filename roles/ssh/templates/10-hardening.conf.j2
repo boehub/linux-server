@@ -1,0 +1,16 @@
+# Managed by Ansible. Named 10- so it is read before cloud-init's 50-cloud-init.conf:
+# in sshd_config the first value given for a setting wins.
+Port {{ ssh_port }}
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+AllowUsers {{ admin_user }}
+MaxAuthTries {{ ssh_max_auth_tries }}
+LoginGraceTime {{ ssh_login_grace_time }}
+ClientAliveInterval 300
+ClientAliveCountMax 2
+X11Forwarding no
+AllowAgentForwarding no
+AllowTcpForwarding {{ 'yes' if ssh_allow_tcp_forwarding | bool else 'no' }}

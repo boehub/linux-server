@@ -1,0 +1,51 @@
+---
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Set the hostname
+  ansible.builtin.hostname:
+    name: "{{ server_hostname }}"
+  when: server_hostname | length > 0
+
+- name: Set the timezone
+  community.general.timezone:
+    name: "{{ server_timezone }}"
+
+- name: Keep the journal on disk, with a size limit
+  ansible.builtin.template:
+    src: journald.conf.j2
+    dest: /etc/systemd/journald.conf.d/10-server.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart journald
+
+- name: Install the automatic update packages
+  ansible.builtin.apt:
+    name: unattended-upgrades
+    state: present
+  when: auto_updates | bool
+
+- name: Configure automatic updates (security updates only, reboot optional)
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/apt/apt.conf.d/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - 20auto-upgrades
+    - 52server-unattended
+  when: auto_updates | bool
+
+- name: Record what was configured (for the verify script)
+  ansible.builtin.template:
+    src: server-setup.env.j2
+    dest: /etc/server-setup.env
+    owner: root
+    group: root
+    mode: "0644"

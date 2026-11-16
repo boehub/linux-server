@@ -1,0 +1,41 @@
+---
+# Renders every role template with the default settings into a folder, so the output can be
+# inspected and validated without changing the machine. Used by tests/run.sh.
+- name: Render templates
+  hosts: all
+  gather_facts: true
+  vars:
+    admin_user: ops
+    admin_ssh_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIATEST ops@test"]
+    stack_sites:
+      - {host: app.example.com, upstream: "app:8080"}
+    stack_acme_email: ops@example.com
+    backup_env: {B2_ACCOUNT_ID: abc}
+    out: /tmp/linux-server-render
+  tasks:
+    - name: Find the templates
+      ansible.builtin.find:
+        paths: "{{ playbook_dir }}/../roles"
+        patterns: "*.j2"
+        recurse: true
+      register: found
+
+    - name: Make the output folders
+      ansible.builtin.file:
+        path: "{{ out }}/{{ item.path | dirname | regex_replace('^.*/roles/', '') | regex_replace('/templates$', '') }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ found.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"
+
+    - name: Render each template
+      ansible.builtin.template:
+        src: "{{ item.path }}"
+        dest: >-
+          {{ out }}/{{ item.path | dirname | regex_replace('^.*/roles/', '') | regex_replace('/templates$', '') }}/{{
+          item.path | basename | regex_replace('[.]j2$', '') }}
+        mode: "0644"
+      loop: "{{ found.files }}"
+      loop_control:
+        label: "{{ item.path | basename }}"

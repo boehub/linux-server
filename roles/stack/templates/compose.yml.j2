@@ -1,0 +1,39 @@
+# Managed by Ansible. Add your own services in a separate compose file that joins the
+# "web" network as an external network; do not publish their ports on the host.
+name: stack
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./caddy:/etc/caddy:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [web]
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+{% if stack_demo_app | bool %}
+
+  whoami:
+    image: traefik/whoami:v1.10.2
+    restart: unless-stopped
+    networks: [web]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+{% endif %}
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+networks:
+  web:
+    name: web

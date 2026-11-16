@@ -1,0 +1,10 @@
+---
+# Copy to inventory/hosts.yml to manage a remote server from your own computer:
+#   ansible-playbook site.yml -e @local.yml
+# (To configure the machine you are logged in to, use ./bootstrap.sh instead.)
+all:
+  hosts:
+    server1:
+      ansible_host: 203.0.113.10
+      ansible_user: ubuntu        # a user that can already log in and use sudo
+      ansible_become: true

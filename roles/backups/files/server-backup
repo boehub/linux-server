@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Back up the server's important folders with restic, then trim old snapshots.
+# Settings come from /etc/restic/env. Runs from a systemd timer; safe to run by hand.
+set -euo pipefail
+
+ENV_FILE=${SERVER_BACKUP_ENV:-/etc/restic/env}
+STATE_DIR=${SERVER_BACKUP_STATE:-/var/lib/server-backup}
+
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
+
+mkdir -p "$STATE_DIR"
+
+# First run: create the repository. Only when restic says there is none there: any other
+# failure (wrong password, no network, bad credentials) must stop the run, not start a new repository.
+if ! out=$(restic cat config 2>&1); then
+    if grep -q "Is there a repository at the following location" <<<"$out"; then
+        echo "creating restic repository at $RESTIC_REPOSITORY"
+        restic init
+    else
+        echo "cannot open the backup repository:" >&2
+        echo "$out" >&2
+        exit 1
+    fi
+fi
+
+# Only paths that exist, so a missing /srv on a fresh machine is not a failure.
+paths=()
+for p in $BACKUP_PATHS; do
+    [ -e "$p" ] && paths+=("$p")
+done
+[ "${#paths[@]}" -gt 0 ] || { echo "none of the backup paths exist" >&2; exit 1; }
+
+restic backup --one-file-system --exclude-file="${SERVER_BACKUP_EXCLUDES:-/etc/restic/excludes}" \
+    --tag server "${paths[@]}"
+
+restic forget --tag server --prune \
+    --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY"
+
+# Once a week, re-read a slice of the stored data and verify it.
+week_marker="$STATE_DIR/last-check"
+if [ ! -e "$week_marker" ] || [ -n "$(find "$week_marker" -mtime +6 2>/dev/null)" ]; then
+    restic check --read-data-subset="$CHECK_SUBSET"
+    touch "$week_marker"
+fi
+
+date +%s > "$STATE_DIR/last-success"
+echo "backup finished"

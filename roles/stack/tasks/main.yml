@@ -1,0 +1,36 @@
+---
+- name: Create the stack directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ stack_dir }}"
+    - "{{ stack_dir }}/caddy"
+
+# Caddy's folder is mounted as a whole, not the single file: Ansible replaces files by
+# renaming a new one over the old, and a container that mounted the old file would not see it.
+- name: Write the Caddyfile
+  ansible.builtin.template:
+    src: Caddyfile.j2
+    dest: "{{ stack_dir }}/caddy/Caddyfile"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Reload Caddy
+
+- name: Write the Compose file
+  ansible.builtin.template:
+    src: compose.yml.j2
+    dest: "{{ stack_dir }}/compose.yml"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Start the stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ stack_dir }}"
+    state: present
+    pull: missing

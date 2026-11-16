@@ -1,0 +1,49 @@
+---
+- name: Set up the server
+  hosts: all
+  become: true
+  gather_facts: true
+  pre_tasks:
+    - name: Check this is a supported system
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['distribution'] == "Ubuntu"
+          - ansible_facts['distribution_version'] in ["22.04", "24.04"]
+        fail_msg: "Only Ubuntu Server 22.04 and 24.04 LTS are supported (found {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }})."
+      tags: always
+
+    - name: Check the required settings are present
+      ansible.builtin.assert:
+        that:
+          - admin_user | length > 0
+          - admin_ssh_keys | length > 0
+        fail_msg: >-
+          admin_user and admin_ssh_keys must be set (see local.yml.example). They are required because
+          SSH password logins are turned off, and without a key you would lock yourself out.
+      tags: always
+
+  roles:
+    - role: base
+      tags: [base]
+    - role: users
+      tags: [users]
+    - role: ssh
+      tags: [ssh]
+    - role: firewall
+      tags: [firewall]
+    - role: fail2ban
+      tags: [fail2ban]
+    - role: sysctl
+      tags: [sysctl]
+    - role: docker
+      tags: [docker]
+      when: enable_docker | bool
+    - role: stack
+      tags: [stack]
+      when: enable_docker | bool and enable_stack | bool
+    - role: backups
+      tags: [backups]
+      when: enable_backups | bool
+    - role: healthcheck
+      tags: [healthcheck]
+      when: enable_healthcheck | bool

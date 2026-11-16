@@ -1,0 +1,37 @@
+---
+- name: Install the health check script
+  ansible.builtin.copy:
+    src: server-healthcheck
+    dest: /usr/local/bin/server-healthcheck
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write the health check settings
+  ansible.builtin.template:
+    src: healthcheck.env.j2
+    dest: /etc/server-healthcheck.env
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Install the systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - server-healthcheck.service
+    - server-healthcheck.timer
+  notify: Reload systemd for healthcheck
+
+- name: Make systemd read the new units now
+  ansible.builtin.meta: flush_handlers
+
+- name: Run the health check on a schedule
+  ansible.builtin.systemd:
+    name: server-healthcheck.timer
+    enabled: true
+    state: started

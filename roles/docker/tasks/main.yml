@@ -1,0 +1,58 @@
+---
+- name: Create the apt keyring directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Download Docker's package signing key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Add Docker's package repository
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: deb
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ ansible_facts['distribution_release'] }}"
+    components: stable
+    architectures: "{{ 'arm64' if ansible_facts['architecture'] == 'aarch64' else 'amd64' }}"
+    signed_by: /etc/apt/keyrings/docker.asc
+    state: present
+  register: docker_repo
+
+- name: Refresh the package list after adding the repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: docker_repo is changed  # noqa: no-handler
+
+- name: Install Docker Engine and the Compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+
+- name: Configure the Docker daemon
+  ansible.builtin.template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart docker
+
+- name: Run Docker
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true

@@ -1,0 +1,89 @@
+---
+# Every setting in one place. Override any of them in local.yml (see local.yml.example),
+# on the command line (-e name=value), or with bootstrap.sh flags.
+
+# ---- required -------------------------------------------------------------------
+admin_user: ""             # the login you will use; created if missing
+admin_ssh_keys: []         # public keys that may log in as admin_user
+
+# ---- what to install ------------------------------------------------------------
+enable_docker: true
+enable_stack: true         # Caddy (automatic HTTPS) in Docker, with a demo app behind it
+enable_backups: true
+enable_healthcheck: true
+
+# ---- base system ----------------------------------------------------------------
+server_hostname: ""        # empty: leave the hostname alone
+server_timezone: "UTC"
+base_packages:
+  - ca-certificates
+  - curl
+  - git
+  - htop
+  - jq
+  - ncdu
+  - rsync
+  - tmux
+  - unzip
+  - vim
+  - python3-debian
+  - openssh-server
+auto_updates: true         # install security updates automatically
+auto_reboot: false         # reboot by itself when an update needs it
+auto_reboot_time: "04:00"
+journal_max_use: "500M"
+
+# ---- admin user -----------------------------------------------------------------
+admin_sudo_nopasswd: true  # needed because the account has no password
+admin_extra_groups: []     # e.g. [docker] (that is root-equivalent: see docs/security.md)
+admin_keys_exclusive: true # remove keys not listed above from authorized_keys
+
+# ---- SSH ------------------------------------------------------------------------
+ssh_port: 22               # a different port is supported; see docs/security.md
+ssh_allow_tcp_forwarding: false
+ssh_max_auth_tries: 3
+ssh_login_grace_time: 30
+
+# ---- firewall -------------------------------------------------------------------
+# Extra holes, e.g. [{ port: 51820, proto: udp }, { port: 8080, proto: tcp, from: 192.168.1.0/24 }]
+firewall_extra_rules: []
+
+# ---- fail2ban -------------------------------------------------------------------
+fail2ban_ignore_ips: ["127.0.0.1/8", "::1"]   # add your own address so you can't ban yourself
+fail2ban_bantime: "1h"
+fail2ban_findtime: "10m"
+fail2ban_maxretry: 5
+
+# ---- Docker ---------------------------------------------------------------------
+docker_log_max_size: "10m"
+docker_log_max_file: 3
+
+# ---- web stack ------------------------------------------------------------------
+stack_dir: /srv/stack
+stack_domain: "localhost"  # your real domain; "localhost" makes Caddy use a local test certificate
+stack_acme_email: ""       # contact address for Let's Encrypt (recommended for real domains)
+stack_demo_app: true       # a tiny "whoami" service at stack_domain
+# More sites: [{ host: app.example.com, upstream: "app:8080" }]. The upstream must be a container
+# on the "web" network (see docs/runbook.md) -- never publish its port on the host.
+stack_sites: []
+
+# ---- backups (restic) -----------------------------------------------------------
+# The default repository is on the same disk, which protects against mistakes but NOT against
+# losing the disk. Point it at another machine or object storage for real backups
+# (e.g. "sftp:user@host:/backups/server" or "s3:s3.amazonaws.com/bucket"), see docs/backups.md.
+backup_repo: /var/backups/restic
+backup_paths: [/etc, /srv, /home, /root]
+backup_excludes: ["*/node_modules", "*/.cache", "/srv/stack/caddy_data/caddy/locks"]
+backup_env: {}             # credentials for the repository, e.g. { AWS_ACCESS_KEY_ID: "...", AWS_SECRET_ACCESS_KEY: "..." }
+backup_time: "03:30"
+backup_keep_daily: 7
+backup_keep_weekly: 4
+backup_keep_monthly: 6
+backup_check_subset: "5%"  # share of the stored data re-read and verified each week
+
+# ---- health check ---------------------------------------------------------------
+healthcheck_interval: "5min"
+healthcheck_disk_max_percent: 85
+healthcheck_mem_min_percent: 10
+healthcheck_backup_max_age_hours: 36
+healthcheck_notify_url: ""  # optional: an ntfy.sh topic URL or any webhook that accepts a POST body

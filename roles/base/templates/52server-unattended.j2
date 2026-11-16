@@ -1,0 +1,6 @@
+// Managed by Ansible. The stock 50unattended-upgrades already limits updates to the
+// distribution's security pocket; these lines add the reboot policy.
+Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+Unattended-Upgrade::Remove-Unused-Dependencies "true";
+Unattended-Upgrade::Automatic-Reboot "{{ 'true' if auto_reboot | bool else 'false' }}";
+Unattended-Upgrade::Automatic-Reboot-Time "{{ auto_reboot_time }}";

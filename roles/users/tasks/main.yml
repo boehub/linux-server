@@ -1,0 +1,25 @@
+---
+- name: Create the admin user
+  ansible.builtin.user:
+    name: "{{ admin_user }}"
+    shell: /bin/bash
+    groups: "{{ admin_extra_groups }}"
+    append: true
+    create_home: true
+
+- name: Allow the admin user's SSH keys
+  ansible.posix.authorized_key:
+    user: "{{ admin_user }}"
+    key: "{{ admin_ssh_keys | join('\n') }}"
+    exclusive: "{{ admin_keys_exclusive }}"
+
+- name: Let the admin user use sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/90-admin
+    content: |
+      # Managed by Ansible
+      {{ admin_user }} ALL=(ALL:ALL) {{ 'NOPASSWD: ' if admin_sudo_nopasswd | bool else '' }}ALL
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s

@@ -1,0 +1,5 @@
+local.yml
+inventory/hosts.yml.bak
+*.retry
+__pycache__/
+.ansible/

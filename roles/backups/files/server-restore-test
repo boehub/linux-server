@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Prove the backups work: restore the newest snapshot into a temporary folder and compare it
+# with the live files. A backup you have not restored is a hope, not a backup.
+#   sudo server-restore-test [path-inside-the-backup ...]     (default: /etc/hostname /etc/ssh)
+set -euo pipefail
+
+ENV_FILE=${SERVER_BACKUP_ENV:-/etc/restic/env}
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
+
+[ "$#" -gt 0 ] || set -- /etc/hostname /etc/ssh/sshd_config.d
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+snap=$(restic snapshots --tag server --latest 1 --json | jq -r '.[-1].short_id // empty')
+[ -n "$snap" ] || { echo "no backups found" >&2; exit 1; }
+echo "restoring snapshot $snap into a temporary folder"
+
+args=()
+for p in "$@"; do args+=(--include "$p"); done
+restic restore "$snap" --target "$tmp" "${args[@]}" >/dev/null
+
+status=0
+for p in "$@"; do
+    if [ ! -e "$tmp$p" ]; then
+        echo "MISSING from the backup: $p" >&2
+        status=1
+    elif diff -r "$p" "$tmp$p" >/dev/null 2>&1; then
+        echo "identical: $p"
+    else
+        echo "DIFFERS (changed since the backup, or damaged): $p" >&2
+        status=1
+    fi
+done
+exit "$status"

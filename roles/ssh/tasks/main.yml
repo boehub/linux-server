@@ -1,0 +1,32 @@
+---
+- name: Install the hardened SSH settings
+  ansible.builtin.template:
+    src: 10-hardening.conf.j2
+    dest: /etc/ssh/sshd_config.d/10-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload ssh
+
+# Ubuntu 24.04 starts sshd from a socket, which fixes the port at boot time. For any other
+# port, sshd listens by itself instead.
+- name: Make sure the SSH service runs on its own when the port is not 22
+  when: ssh_port | int != 22
+  block:
+    - name: Stop using socket activation
+      ansible.builtin.systemd:
+        name: ssh.socket
+        enabled: false
+        state: stopped
+      failed_when: false
+
+    - name: Enable the SSH service
+      ansible.builtin.systemd:
+        name: ssh.service
+        enabled: true
+        state: started
+
+- name: Check that the SSH configuration is valid
+  ansible.builtin.command: /usr/sbin/sshd -t
+  changed_when: false

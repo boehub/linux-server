@@ -1,0 +1,89 @@
+---
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq restic jq shellcheck openssh-server
+          pip install ansible ansible-lint yamllint
+
+      - name: Lint (yaml, ansible, shell)
+        run: |
+          yamllint .
+          ansible-lint
+          shellcheck bootstrap.sh scripts/*.sh tests/*.sh roles/*/files/*
+
+      - name: Unit tests (bootstrap checks, templates, health check, backup scripts)
+        run: tests/run.sh
+        env:
+          REQUIRE_TOOLS: "1"
+
+      - name: Validate the generated Caddy and Compose files with the real tools
+        run: |
+          docker run --rm -v /tmp/linux-server-render/stack:/work:ro caddy:2.8-alpine \
+            sh -c 'cp /work/Caddyfile /tmp/Caddyfile && caddy validate --config /tmp/Caddyfile'
+          docker compose -f /tmp/linux-server-render/stack/compose.yml config -q
+
+  apply:
+    # The real test: set up a clean Ubuntu machine with bootstrap.sh, check it from the
+    # outside, set it up again (nothing may change), and prove a backup can be restored.
+    needs: lint-and-unit
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare the runner
+        run: |
+          # The runner image ships its own Docker repository entry; ours must be the only one.
+          sudo rm -f /etc/apt/sources.list.d/docker*.list /etc/apt/sources.list.d/docker*.sources
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openssh-server
+          ssh-keygen -q -t ed25519 -N '' -f "$HOME/ci_key"
+          # keep the first backup small: the runner's home folder is large
+          printf '%s\n' '---' 'backup_paths: [/etc, /srv]' > "$RUNNER_TEMP/extra.yml"
+
+      - name: Set the server up
+        run: sudo ./bootstrap.sh --admin-user ops --ssh-key-file "$HOME/ci_key.pub" --extra-vars "$RUNNER_TEMP/extra.yml"
+
+      - name: Run it a second time; nothing may change
+        run: |
+          sudo env PATH=/opt/server-setup-venv/bin:$PATH ansible-playbook site.yml -e @local.yml \
+            -e "@$RUNNER_TEMP/extra.yml" | tee second-run.txt
+          grep -E 'changed=0 +unreachable=0 +failed=0' second-run.txt
+
+      - name: Check the live system
+        run: sudo scripts/verify.sh
+
+      - name: Log in the way a person would
+        run: |
+          opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes -o ConnectTimeout=10"
+          echo "the admin can log in with the key:"
+          ssh $opts -i "$HOME/ci_key" ops@localhost 'echo logged in as $(whoami); sudo -n true && echo sudo works'
+          echo "root cannot, even with the same key:"
+          if ssh $opts -i "$HOME/ci_key" root@localhost true; then echo "root login worked"; exit 1; fi
+          echo "passwords are refused:"
+          out=$(ssh $opts -o PubkeyAuthentication=no -o PreferredAuthentications=password ops@localhost true 2>&1 || true)
+          echo "$out"
+          grep -q "Permission denied (publickey)" <<<"$out"
+
+      - name: Restore test and health check
+        run: |
+          sudo server-restore-test
+          sudo server-healthcheck || true
+          sudo jq . /var/lib/server-health/status.json
+          sudo systemctl list-timers --no-pager 'server-*'
