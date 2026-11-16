@@ -61,5 +61,5 @@ Security updates are automatic. For everything else: `sudo apt update && sudo ap
 ## Rebuild from scratch
 
 1. Install Ubuntu Server on the new machine and run `bootstrap.sh` with the same `local.yml`.
-2. Put the old `/etc/restic/password` back **before** the first backup, i.e. before running bootstrap, or copy it afterwards and `rm -rf` the freshly created empty repository: `sudo install -m600 saved-password /etc/restic/password`.
+2. To reuse an existing backup repository (remote, or a disk you kept), put the old password in place **before** running bootstrap, so it is not replaced and the repository can be opened: `sudo install -d -m700 /etc/restic && sudo install -m600 saved-password /etc/restic/password`.
 3. `sudo bash -c 'set -a; . /etc/restic/env; restic restore latest --target /'` restores `/srv` and friends; then `sudo docker compose -f /srv/stack/compose.yml up -d`.
