@@ -20,7 +20,7 @@ check() {  # check "description" command...
 
 # ---- SSH ------------------------------------------------------------------------------
 sshd_t=$(sshd -T 2>/dev/null)
-# shellcheck disable=SC2329  # called through check() as "$@"
+# shellcheck disable=SC2317,SC2329  # called through check() as "$@"
 sshd_has() { grep -qix "$1" <<<"$sshd_t"; }
 check "SSH: root login is off"             sshd_has "permitrootlogin no"
 check "SSH: password logins are off"       sshd_has "passwordauthentication no"
@@ -38,7 +38,7 @@ check "firewall: incoming is denied by default" grep -q "deny (incoming)" <<<"$u
 check "firewall: SSH port $SSH_PORT is allowed" grep -qE "^$SSH_PORT/tcp +(LIMIT|ALLOW)" <<<"$ufw_v"
 check "fail2ban: running"                  systemctl is-active --quiet fail2ban
 check "fail2ban: sshd jail is on"          fail2ban-client status sshd
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 sysctl_is() { [ "$(sysctl -n "$1" 2>/dev/null)" = "$2" ]; }
 check "kernel: reverse-path filtering on"  sysctl_is net.ipv4.conf.all.rp_filter 1
 check "kernel: SYN cookies on"             sysctl_is net.ipv4.tcp_syncookies 1
