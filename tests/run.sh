@@ -92,7 +92,8 @@ if need ansible-playbook; then
         expect_ok "backup env sources cleanly" bash -c "set -a; . '$R/backups/env'; [ \"\$SECRET\" = 'a b\$c' ]"
         expect_ok "verify env sources cleanly" bash -c ". '$R/base/server-setup.env'; [ \"\$ADMIN_USER\" = ops ]"
         if command -v sshd >/dev/null 2>&1; then
-            expect_ok "sshd accepts the settings" /usr/sbin/sshd -t -f "$R/ssh/10-hardening.conf"
+            ssh-keygen -q -t ed25519 -N '' -f "$WORK/hostkey"
+            expect_ok "sshd accepts the settings" /usr/sbin/sshd -t -h "$WORK/hostkey" -f "$R/ssh/10-hardening.conf"
         else need sshd || skip "sshd not installed: skipping sshd -t"; fi
     else
         bad "templates render" "$(tail -5 "$WORK/render.log")"
