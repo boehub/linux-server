@@ -1,4 +1,13 @@
 ---
+# sshd -t insists on this folder. Ubuntu 24.04 starts sshd on demand, so it may not exist yet.
+- name: Make sure sshd's runtime folder exists for the config check
+  ansible.builtin.file:
+    path: /run/sshd
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Install the hardened SSH settings
   ansible.builtin.template:
     src: 10-hardening.conf.j2
