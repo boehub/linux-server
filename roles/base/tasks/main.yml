@@ -15,6 +15,14 @@
   community.general.timezone:
     name: "{{ server_timezone }}"
 
+- name: Create the journald settings folder
+  ansible.builtin.file:
+    path: /etc/systemd/journald.conf.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
 - name: Keep the journal on disk, with a size limit
   ansible.builtin.template:
     src: journald.conf.j2
