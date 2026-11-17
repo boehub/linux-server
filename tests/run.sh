@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2015,SC2016,SC2317  # "A && ok || bad" is intended; single quotes hold literal JSON/text
 # Tests that need no root and change nothing on the machine:
 #   bootstrap.sh argument checks, the rendered templates, the health check, the backup scripts.
 # The full end-to-end test (apply the playbook for real) runs in CI; see .github/workflows/ci.yml.
